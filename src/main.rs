@@ -23,6 +23,9 @@ struct Cli {
     
     #[arg(long, help = "Output as JSON")]
     json: bool,
+    
+    #[arg(long, help = "Server data path (for list/inspect commands)")]
+    data_path: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -216,16 +219,36 @@ async fn main() -> Result<()> {
             }
         }
         Commands::List => {
+            // Get server data path
+            let data_path = if let Some(path) = &cli.data_path {
+                path.clone()
+            } else {
+                match client.get_server_info().await {
+                    Ok(path) => {
+                        info!("Server data path: {}", path);
+                        path
+                    },
+                    Err(e) => {
+                        error!("Failed to get server info: {}", e);
+                        "../symvead/custom-data/files".to_string()
+                    },
+                }
+            };
+            
+            info!("Attempting to read directory: {}", data_path);
+            
             // Simple file listing from server data directory
-            match std::fs::read_dir("../symvead/custom-data/files") {
+            match std::fs::read_dir(&data_path) {
                 Ok(entries) => {
                     let mut files = Vec::new();
                     for entry in entries {
                         if let Ok(entry) = entry {
                             let path = entry.path();
-                            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                                if !name.ends_with(".meta") {
-                                    files.push(name.to_string());
+                            if path.is_file() {
+                                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                                    if !name.ends_with(".meta") && !name.starts_with(".") {
+                                        files.push(name.to_string());
+                                    }
                                 }
                             }
                         }
@@ -258,8 +281,14 @@ async fn main() -> Result<()> {
             }
         }
         Commands::Inspect { key } => {
+            // Get server data path
+            let data_path = match client.get_server_info().await {
+                Ok(path) => path,
+                Err(_) => "../symvead/custom-data/files".to_string(),
+            };
+            
             // Read metadata directly from server data directory
-            match std::fs::read_to_string(format!("../symvead/custom-data/files/{}.meta", key)) {
+            match std::fs::read_to_string(format!("{}/{}.meta", data_path, key)) {
                 Ok(meta_json) => {
                     // Parse and display formatted metadata
                     if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&meta_json) {
@@ -301,7 +330,12 @@ async fn main() -> Result<()> {
             }
         }
         Commands::Explain { key, corpus } => {
-            match std::fs::read_to_string(format!("../symvead/custom-data/files/{}.meta", key)) {
+            let data_path = match client.get_server_info().await {
+                Ok(path) => path,
+                Err(_) => "../symvead/custom-data/files".to_string(),
+            };
+            
+            match std::fs::read_to_string(format!("{}/{}.meta", data_path, key)) {
                 Ok(meta_json) => {
                     if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&meta_json) {
                         if corpus {
@@ -403,7 +437,12 @@ async fn main() -> Result<()> {
             }
         }
         Commands::SharedWith { key } => {
-            match std::fs::read_to_string(format!("../symvead/custom-data/files/{}.meta", key)) {
+            let data_path = match client.get_server_info().await {
+                Ok(path) => path,
+                Err(_) => "../symvead/custom-data/files".to_string(),
+            };
+            
+            match std::fs::read_to_string(format!("{}/{}.meta", data_path, key)) {
                 Ok(meta_json) => {
                     if let Ok(meta) = serde_json::from_str::<serde_json::Value>(&meta_json) {
                         if let Some(symbols) = meta["symbols"].as_array() {

@@ -10,6 +10,7 @@ use crate::protocol::{
 
 pub struct SymveaClient {
     stream: TcpStream,
+    pub data_path: Option<String>,
 }
 
 impl SymveaClient {
@@ -25,7 +26,7 @@ impl SymveaClient {
         read_handshake(&mut stream).await?;
         info!("Handshake completed successfully");
         
-        Ok(Self { stream })
+        Ok(Self { stream, data_path: None })
     }
 
     pub async fn upload(
@@ -221,5 +222,22 @@ impl SymveaClient {
         
         debug!("Freeze dictionary command sent");
         Ok(())
+    }
+    
+    pub async fn get_server_info(&mut self) -> Result<String> {
+        debug!("Requesting server info");
+        
+        write_frame(&mut self.stream, Frame::GetServerInfo).await?;
+        
+        match read_frame(&mut self.stream).await? {
+            Frame::ServerInfo { data_path } => {
+                self.data_path = Some(data_path.clone());
+                Ok(data_path)
+            }
+            f => {
+                error!("Unexpected response: {:?}", f);
+                anyhow::bail!("unexpected response: {:?}", f)
+            }
+        }
     }
 }

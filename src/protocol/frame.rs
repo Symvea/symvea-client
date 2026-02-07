@@ -86,6 +86,9 @@ pub enum Frame {
     ChunkStart { key: String, total_size: u64, chunk_count: u32, user_id: Option<String> },
     ChunkData { key: String, chunk_index: u32, data: Vec<u8> },
     ChunkEnd { key: String },
+    // Server info
+    GetServerInfo,
+    ServerInfo { data_path: String },
 }
 
 fn crc32(data: &[u8]) -> u32 {
@@ -173,6 +176,14 @@ pub async fn write_frame(stream: &mut TcpStream, frame: Frame) -> Result<()> {
         Frame::ChunkEnd { key } => {
             debug!("ChunkEnd frame: key='{}", key);
             (0x12u8, key.into_bytes())
+        },
+        Frame::GetServerInfo => {
+            debug!("GetServerInfo frame");
+            (0x20u8, Vec::new())
+        },
+        Frame::ServerInfo { data_path } => {
+            debug!("ServerInfo frame: data_path='{}", data_path);
+            (0x21u8, data_path.into_bytes())
         },
     };
     
@@ -300,6 +311,12 @@ pub async fn read_frame(stream: &mut TcpStream) -> Result<Frame> {
             
             debug!("Parsed Verified: key='{}', hash_match={}", key, hash_match);
             Ok(Frame::Verified { key, hash_match })
+        },
+        0x21 => { // ServerInfo
+            debug!("Parsing ServerInfo frame");
+            let data_path = String::from_utf8(payload)?;
+            debug!("Parsed ServerInfo: data_path='{}", data_path);
+            Ok(Frame::ServerInfo { data_path })
         },
         _ => {
             error!("Unknown frame type: {}", header.frame_type);
